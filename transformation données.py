@@ -1,6 +1,8 @@
 import polars as pl
 import pathlib
 import urllib.request
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
 
 ### !!!
 ### Pour exécuter ce script il est nécessaire d'installer polars : pip install polars
@@ -24,7 +26,7 @@ url2 = "http://www.data.gouv.fr/fr/datasets/r/34434cef-2f85-43b9-a601-c625ee426c
 url3 = "http://www.data.gouv.fr/fr/datasets/r/edadefbc-9707-45ef-a841-283608709e58"
 url4 = "http://www.data.gouv.fr/fr/datasets/r/08871624-ccb5-457a-83d5-fb134cba60da"
 url5 = "http://www.data.gouv.fr/fr/datasets/r/43618998-3b37-4a69-bb25-f321f1a93ed1"
-url6 = "http://www.data.gouv.fr/fr/datasets/r/3062548d-f510-4ded-ba38-a64126a5331b"
+url6 = "http://www.data.gouv.fr/fr/datasets/r/13d16a2f-4cbb-43d1-9057-535ad83354b8"
 url7 = "http://www.data.gouv.fr/fr/datasets/r/2902fa66-cafd-47f5-9a15-196853a3ba42"
 
 
