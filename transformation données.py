@@ -79,21 +79,23 @@ DELINQUANCE = DELINQUANCE.filter(pl.col("CODGEO_2023").str.contains(regex_codes_
 # Selection des colonnes pertinentes
 VF = VF[
     [
-        "Nature mutation",
         "Valeur fonciere",
         "Code postal",
-        "Commune",
         "Code departement",
         "Code commune",
         "Code type local",
         "Type local",
         "Surface reelle bati",
-        "Nombre pieces principales",
-        "Surface terrain"
+        "Nombre pieces principales"
     ]
 ]
 
-#On renomme la colonne pour plus de clareté
+VLAPP.drop("TYPPRED", "nbobs_com", "nbobs_mail")
+VLM.drop("TYPPRED", "nbobs_com", "nbobs_mail")
+VLAPP12.drop("TYPPRED", "nbobs_com", "nbobs_mail")
+VLAPP3PLUS.drop("TYPPRED", "nbobs_com", "nbobs_mail")
+
+# On renomme la colonne pour plus de clareté
 CC = CC.rename({"#Code_commune_INSEE": "INSEE_C"})
 
 # On enlève tous les locaux industriels et les dépendances
@@ -109,6 +111,8 @@ VF = VF.with_columns(
     .alias("INSEE_C")
 )
 
+# On rajoute une colonne pour le type de bien de location
+
 with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1000) and pl.Config(tbl_rows=40):
     print(VLM.sort("INSEE_C"))
     print(VLAPP12.sort("INSEE_C"))
@@ -117,6 +121,7 @@ with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1000) and pl.Config(tb
     print(VF.sort("INSEE_C"))
     print(CC.sort("INSEE_C"))
     print(CC.unique("Code_postal"))
+    print(DELINQUANCE.sort("CODGEO_2023"))
 
 # On sauvegarde les données traitées
 SAUVEGARDER = True
