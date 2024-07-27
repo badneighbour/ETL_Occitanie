@@ -8,8 +8,9 @@ ssl._create_default_https_context = ssl._create_unverified_context
 ### Pour exécuter ce script il est nécessaire d'installer polars : pip install polars
 ### !!!
 
-departements_occitanie = ["9", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]
-regex_codes_occitanie = "^(9|09|11|30|31|32|34|46|48|65|66|81|82)[0-9]{3}$"
+departements_occitanie = ["9", "09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]
+regex_codes_occitanie = "^(" + "|".join(departements_occitanie) + ")[0-9]{3}$"
+regex_codes_occitanie_explicit = "^(9|09|11|12|30|31|32|34|46|48|65|66|81|82)[0-9]{3}$"
 
 # Téléchargement des dernières données
 TELECHARGER = False
@@ -80,6 +81,7 @@ VF = VF[
     [
         "Nature mutation",
         "Valeur fonciere",
+        "Code postal",
         "Commune",
         "Code departement",
         "Code commune",
@@ -91,10 +93,33 @@ VF = VF[
     ]
 ]
 
-# On enlève tous les locaux  industriels
-VF = VF.filter(pl.col("Code type local") != 4)
+#On renomme la colonne pour plus de clareté
+CC = CC.rename({"#Code_commune_INSEE": "INSEE_C"})
+
+# On enlève tous les locaux industriels et les dépendances
+VF = VF.filter(pl.col("Code type local") < 3)
+
+# On joint rajoute la donnée code insee manquante qui nous sert pour les jointures
+VF = VF.with_columns(
+    pl.when(pl.col("Code commune") < 10)
+    .then(pl.col("Code departement").cast(pl.String) + pl.lit("00") + pl.col("Code commune").cast(pl.String))
+    .when(pl.col("Code commune") < 100)
+    .then(pl.col("Code departement").cast(pl.String) + pl.lit("0") + pl.col("Code commune").cast(pl.String))
+    .otherwise(pl.col("Code departement").cast(pl.String) + pl.col("Code commune").cast(pl.String))
+    .alias("INSEE_C")
+)
+
+with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1000) and pl.Config(tbl_rows=40):
+    print(VLM.sort("INSEE_C"))
+    print(VLAPP12.sort("INSEE_C"))
+    print(VLAPP3PLUS.sort("INSEE_C"))
+    print(VLAPP.sort("INSEE_C"))
+    print(VF.sort("INSEE_C"))
+    print(CC.sort("INSEE_C"))
+    print(CC.unique("Code_postal"))
 
 # On sauvegarde les données traitées
+SAUVEGARDER = True
 output_path = "output/"
 output1 = output_path + "valeursfoncieres-2023.csv"
 output2 = output_path + "carte_loyers_maison.csv"
@@ -115,14 +140,16 @@ def save_data(file_output, df):
 
 try:
     pathlib.Path(output_path).mkdir(exist_ok=True)
-
-    save_data(output1, VF)
-    save_data(output2, VLM)
-    save_data(output3, VLAPP12)
-    save_data(output4, VLAPP3PLUS)
-    save_data(output5, VLAPP)
-    save_data(output6, CC)
-    save_data(output7, DELINQUANCE)
+    if SAUVEGARDER:
+        save_data(output1, VF)
+        save_data(output2, VLM)
+        save_data(output3, VLAPP12)
+        save_data(output4, VLAPP3PLUS)
+        save_data(output5, VLAPP)
+        save_data(output6, CC)
+        save_data(output7, DELINQUANCE)
+    else:
+        print("Données non sauvegardées")
 
 except IOError:
     print("Erreur dans la sauvegarde des données")
