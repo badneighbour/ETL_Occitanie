@@ -13,7 +13,7 @@ regex_codes_occitanie = "^(" + "|".join(departements_occitanie) + ")[0-9]{3}$"
 regex_codes_occitanie_explicit = "^(9|09|11|12|30|31|32|34|46|48|65|66|81|82)[0-9]{3}$"
 
 # Téléchargement des dernières données
-TELECHARGER = False
+RETELECHARGER = False
 input_path = "input/"
 fichier1 = input_path + "valeursfoncieres-2023.csv"
 fichier2 = input_path + "carte_loyers_maison.csv"
@@ -22,6 +22,7 @@ fichier4 = input_path + "carte_loyers_appart_3plus.csv"
 fichier5 = input_path + "carte_loyers_appart.csv"
 fichier6 = input_path + "codes_communes.csv"
 fichier7 = input_path + "statistiques_delinquance.parquet"
+fichier8 = input_path + "epci_occitanie.parquet"
 url1 = "http://www.data.gouv.fr/fr/datasets/r/78348f03-a11c-4a6b-b8db-2acf4fee81b1"
 url2 = "http://www.data.gouv.fr/fr/datasets/r/34434cef-2f85-43b9-a601-c625ee426cb7"
 url3 = "http://www.data.gouv.fr/fr/datasets/r/edadefbc-9707-45ef-a841-283608709e58"
@@ -29,12 +30,14 @@ url4 = "http://www.data.gouv.fr/fr/datasets/r/08871624-ccb5-457a-83d5-fb134cba60
 url5 = "http://www.data.gouv.fr/fr/datasets/r/43618998-3b37-4a69-bb25-f321f1a93ed1"
 url6 = "http://www.data.gouv.fr/fr/datasets/r/13d16a2f-4cbb-43d1-9057-535ad83354b8"
 url7 = "http://www.data.gouv.fr/fr/datasets/r/2902fa66-cafd-47f5-9a15-196853a3ba42"
+url8 = ("https://data.laregion.fr/api/explore/v2.1/catalog/datasets/intercommunalite-occitanie-milesimees/exports"
+        "/parquet?lang=fr&timezone=Europe%2FBerlin")
 
 
 def dowload_data(url, file):
     nom_dossier, nom_fichier = file.split("/")
     if pathlib.Path(file).is_file():
-        if not TELECHARGER:
+        if not RETELECHARGER:
             print("Le fichier '"
                   + nom_fichier
                   + "' existe déjà dans le dossier '"
@@ -57,6 +60,7 @@ try:
     dowload_data(url5, fichier5)
     dowload_data(url6, fichier6)
     dowload_data(url7, fichier7)
+    dowload_data(url8, fichier8)
 
 except IOError:
     print("Erreur dans le téléchargement des données")
@@ -70,6 +74,8 @@ VLAPP3PLUS = pl.read_csv(fichier4, separator=";", encoding="latin", infer_schema
 VLAPP = pl.read_csv(fichier5, separator=";", encoding="latin", infer_schema_length=100000, decimal_comma=True)
 CC = pl.read_csv(fichier6, separator=";", encoding="latin", infer_schema_length=100000, decimal_comma=True)
 DELINQUANCE = pl.read_parquet(fichier7)
+EPCI = pl.read_parquet(fichier8)
+
 
 
 # Selection des données en occitanie
@@ -79,7 +85,8 @@ VLAPP12 = VLAPP12.filter(pl.col("DEP").is_in(departements_occitanie))
 VLAPP3PLUS = VLAPP3PLUS.filter(pl.col("DEP").is_in(departements_occitanie))
 VLAPP = VLAPP.filter(pl.col("DEP").is_in(departements_occitanie))
 CC = CC.filter(pl.col("#Code_commune_INSEE").str.contains(regex_codes_occitanie))
-DELINQUANCE = DELINQUANCE.filter(pl.col("CODGEO_2023").str.contains(regex_codes_occitanie))
+DELINQUANCE = DELINQUANCE.filter(pl.col("CODGEO_2024").str.contains(regex_codes_occitanie))
+
 
 # Selection des colonnes pertinentes
 VF = VF[
@@ -94,10 +101,20 @@ VF = VF[
     ]
 ]
 
-VLAPP = VLAPP.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone")
-VLM = VLM.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone")
-VLAPP12 = VLAPP12.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone")
-VLAPP3PLUS = VLAPP3PLUS.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone")
+EPCI = EPCI[
+    [
+        "epci_code",
+        "epci_current_code",
+        "dep_name",
+        "epci_name",
+        "year",
+    ]
+]
+
+VLAPP = VLAPP.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
+VLM = VLM.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
+VLAPP12 = VLAPP12.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
+VLAPP3PLUS = VLAPP3PLUS.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
 
 # On renomme la colonne pour plus de clareté
 CC = CC.rename({"#Code_commune_INSEE": "INSEE_C"})
@@ -152,20 +169,38 @@ VFMOY = pl.concat([VFMOY, VFMOYAPP])
 
 # On concatène la VL et la VF et on concalcule le rendement locatif
 RL = (VL.join(VFMOY, on=["INSEE_C", "Type_de_bien"], how="left")
-      .with_columns(pl.col("valeur_fonciere_m2") / pl.col("loypredm2") * pl.lit(12 * 100)))
+      .with_columns((pl.col("loypredm2") / pl.col("valeur_fonciere_m2") * pl.lit(12 * 100)).alias("rendement_locatif")))
+
+# On rajoute les noms des epcis et dep en supprimant les doublons dans la table referentiel
+EPCI = EPCI.sort("year").group_by(["epci_current_code"]).last().drop("epci_current_code", "year")
+RL = RL.join(EPCI, left_on="EPCI", right_on="epci_code", how="left")
+
+# On sélectionne les données les plus récentes de la délinquance
+DELINQUANCE = DELINQUANCE.sort("annee").group_by("CODGEO_2024", "classe").last()
+
+# On remplace les null par la moyenne dans les stastistiques de délinquance et on enlève les colonnes inutiles
+DELINQUANCE = DELINQUANCE.with_columns(
+    pl.col("tauxpourmille").fill_null(pl.col("complementinfotaux")),
+    pl.col("faits").fill_null(pl.col("complementinfotaux") * pl.col("POP") / 1000)
+).drop("complementinfoval", "valeur.publiée", "complementinfotaux", "millPOP", "millLOG", "annee", "unité.de.compte")
+
+# On pivote les classes de faits pour faire tenir sur une ligne par ville
+DELINQUANCE_PIVOT = DELINQUANCE.pivot("classe", index=["CODGEO_2024", "POP", "LOG"], values=["faits", "tauxpourmille"], aggregate_function="first")
 
 with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1000) and pl.Config(tbl_rows=40):
-    print(VLM.sort("INSEE_C"))
-    print(VLAPP12.sort("INSEE_C"))
-    print(VLAPP3PLUS.sort("INSEE_C"))
-    print(VLAPP.sort("INSEE_C"))
+    # print(VLM.sort("INSEE_C"))
+    # print(VLAPP12.sort("INSEE_C"))
+    # print(VLAPP3PLUS.sort("INSEE_C"))
+    # print(VLAPP.sort("INSEE_C"))
     print(VL.sort("INSEE_C"))
     print(VF.sort("INSEE_C"))
     print(VFMOY.sort("INSEE_C"))
-    print(VFMOYAPP.sort("INSEE_C"))
-    print(RL.sort("INSEE_C"))
-    print(CC.sort("INSEE_C"))
-    print(DELINQUANCE.sort("CODGEO_2023"))
+    print(RL.sort("EPCI"))
+    # print(RL.filter(pl.col("valeur_fonciere_m2").is_not_null()).sort("EPCI"))
+    # print(CC.sort("INSEE_C"))
+    print(DELINQUANCE.sort("CODGEO_2024"))
+    print(DELINQUANCE_PIVOT)
+    # print(EPCI)
 
 # On sauvegarde les données traitées
 SAUVEGARDER = False
@@ -177,6 +212,7 @@ output4 = output_path + "carte_loyers_appart_3plus.csv"
 output5 = output_path + "carte_loyers_appart.csv"
 output6 = output_path + "codes_communes.csv"
 output7 = output_path + "statistiques_delinquance.csv"
+output8 = output_path + "delinquance_pivot.csv"
 
 
 def save_data(file_output, df):
@@ -197,6 +233,7 @@ try:
         save_data(output5, VLAPP)
         save_data(output6, CC)
         save_data(output7, DELINQUANCE)
+        save_data(output8, DELINQUANCE_PIVOT)
     else:
         print("Données non sauvegardées")
 
