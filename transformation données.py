@@ -10,7 +10,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 departements_occitanie = ["9", "09", "11", "12", "30", "31", "32", "34", "46", "48", "65", "66", "81", "82"]
 regex_codes_occitanie = "^(" + "|".join(departements_occitanie) + ")[0-9]{3}$"
-regex_codes_occitanie_explicit = "^(9|09|11|12|30|31|32|34|46|48|65|66|81|82)[0-9]{3}$"
+# regex_codes_occitanie = "^(9|09|11|12|30|31|32|34|46|48|65|66|81|82)[0-9]{3}$"
 
 # Téléchargement des dernières données
 RETELECHARGER = False
@@ -187,6 +187,9 @@ DELINQUANCE = DELINQUANCE.with_columns(
 # On pivote les classes de faits pour faire tenir sur une ligne par ville
 DELINQUANCE_PIVOT = DELINQUANCE.pivot("classe", index=["CODGEO_2024", "POP", "LOG"], values=["faits", "tauxpourmille"], aggregate_function="first")
 
+# On joint les données de la délinquance dans les données de rendement locatif
+RL = RL.join(DELINQUANCE_PIVOT, left_on="INSEE_C", right_on="CODGEO_2024", how="left")
+
 with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1000) and pl.Config(tbl_rows=40):
     # print(VLM.sort("INSEE_C"))
     # print(VLAPP12.sort("INSEE_C"))
@@ -203,7 +206,7 @@ with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1000) and pl.Config(tb
     # print(EPCI)
 
 # On sauvegarde les données traitées
-SAUVEGARDER = False
+SAUVEGARDER = True
 output_path = "output/"
 output1 = output_path + "valeursfoncieres-2023.csv"
 output2 = output_path + "carte_loyers_maison.csv"
@@ -212,8 +215,7 @@ output4 = output_path + "carte_loyers_appart_3plus.csv"
 output5 = output_path + "carte_loyers_appart.csv"
 output6 = output_path + "codes_communes.csv"
 output7 = output_path + "statistiques_delinquance.csv"
-output8 = output_path + "delinquance_pivot.csv"
-
+output_jasper = output_path + "rendement_locatif.csv"
 
 def save_data(file_output, df):
     nom_dossier, nom_fichier = file_output.split("/")
@@ -233,7 +235,7 @@ try:
         save_data(output5, VLAPP)
         save_data(output6, CC)
         save_data(output7, DELINQUANCE)
-        save_data(output8, DELINQUANCE_PIVOT)
+        save_data(output_jasper, RL)
     else:
         print("Données non sauvegardées")
 
