@@ -159,11 +159,11 @@ VF = VF.with_columns((pl.col("Valeur fonciere") / pl.col("Surface reelle bati"))
 # On fait les moyennes selon le type de bien
 VFMOY = VF.group_by(
     ["INSEE_C", "Type_de_bien"]
-).agg(pl.col("valeur_fonciere_m2").mean())
+).agg(pl.col("Valeur fonciere").mean(), pl.col("valeur_fonciere_m2").mean())
 
 VFMOYAPP = VF.filter(pl.col("Type_de_bien").str.contains("app")).group_by(
     ["INSEE_C"]
-).agg(pl.lit("appartement").alias("Type_de_bien"), pl.col("valeur_fonciere_m2").mean())
+).agg(pl.lit("appartement").alias("Type_de_bien"), pl.col("Valeur fonciere").mean(), pl.col("valeur_fonciere_m2").mean())
 
 VFMOY = pl.concat([VFMOY, VFMOYAPP])
 
