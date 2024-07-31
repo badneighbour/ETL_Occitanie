@@ -77,7 +77,6 @@ DELINQUANCE = pl.read_parquet(fichier7)
 EPCI = pl.read_parquet(fichier8)
 
 
-
 # Selection des données en occitanie
 VF = VF.filter(pl.col("Code departement").is_in(departements_occitanie))
 VLM = VLM.filter(pl.col("DEP").is_in(departements_occitanie))
@@ -135,17 +134,17 @@ VF = VF.with_columns(
 VF = VF.drop("Code commune", "Code departement")
 
 # On rajoute une colonne pour le type de bien
-VLAPP = VLAPP.with_columns(pl.lit("appartement").alias("Type_de_bien"))
-VLAPP12 = VLAPP12.with_columns(pl.lit("appartement de 1 ou 2 pièces").alias("Type_de_bien"))
-VLAPP3PLUS = VLAPP3PLUS.with_columns(pl.lit("appartement de 3 pièces et plus").alias("Type_de_bien"))
+VLAPP = VLAPP.with_columns(pl.lit("app").alias("Type_de_bien"))
+VLAPP12 = VLAPP12.with_columns(pl.lit("app12").alias("Type_de_bien"))
+VLAPP3PLUS = VLAPP3PLUS.with_columns(pl.lit("app3p").alias("Type_de_bien"))
 VLM = VLM.with_columns(pl.lit("maison").alias("Type_de_bien"))
 VF = VF.with_columns(
     pl.when(pl.col("Code type local").eq(1))
     .then(pl.lit("maison"))
     .when(pl.col("Code type local").eq(2) & pl.col("Nombre pieces principales") < 3)
-    .then(pl.lit("appartement de 1 ou 2 pièces"))
+    .then(pl.lit("app12"))
     .when(pl.col("Code type local").eq(2) & pl.col("Nombre pieces principales") > 2)
-    .then(pl.lit("appartement de 3 pièces et plus"))
+    .then(pl.lit("appa3p"))
     .otherwise(pl.lit("autre"))
     .alias("Type_de_bien")
 ).drop("Code type local", "Type local")
@@ -159,16 +158,26 @@ VF = VF.with_columns((pl.col("Valeur fonciere") / pl.col("Surface reelle bati"))
 # On fait les moyennes selon le type de bien
 VFMOY = VF.group_by(
     ["INSEE_C", "Type_de_bien"]
-).agg(pl.col("Valeur fonciere").mean(), pl.col("valeur_fonciere_m2").mean())
+).agg(
+    pl.col("Valeur fonciere").mean(),
+    pl.col("valeur_fonciere_m2").mean(),
+    pl.lit(0).cast(pl.UInt32).alias("pondération_type_de_bien")
+    # on met une pondération nulle aux appartements pour ne pas les compter en double
+)
 
 VFMOYAPP = VF.filter(pl.col("Type_de_bien").str.contains("app")).group_by(
     ["INSEE_C"]
-).agg(pl.lit("appartement").alias("Type_de_bien"), pl.col("Valeur fonciere").mean(), pl.col("valeur_fonciere_m2").mean())
+).agg(
+    pl.lit("app").alias("Type_de_bien"),
+    pl.col("Valeur fonciere").mean(),
+    pl.col("valeur_fonciere_m2").mean(),
+    pl.len().alias("pondération_type_de_bien")
+)
 
 VFMOY = pl.concat([VFMOY, VFMOYAPP])
 
 # On concatène la VL et la VF et on concalcule le rendement locatif
-RL = (VL.join(VFMOY, on=["INSEE_C", "Type_de_bien"], how="left")
+RL = (VL.join(VFMOY, on=["INSEE_C", "Type_de_bien"])
       .with_columns((pl.col("loypredm2") / pl.col("valeur_fonciere_m2") * pl.lit(12 * 100)).alias("rendement_locatif")))
 
 # On rajoute les noms des epcis et dep en supprimant les doublons dans la table referentiel
@@ -216,6 +225,7 @@ output5 = output_path + "carte_loyers_appart.csv"
 output6 = output_path + "codes_communes.csv"
 output7 = output_path + "statistiques_delinquance.csv"
 output_jasper = output_path + "rendement_locatif.csv"
+
 
 def save_data(file_output, df):
     nom_dossier, nom_fichier = file_output.split("/")
