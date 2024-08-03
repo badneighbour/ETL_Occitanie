@@ -135,8 +135,6 @@ VF = pl.read_csv(output1, separator=";", infer_schema_length=1000000, decimal_co
 
 # Suppression des lignes doubles à cause de différentes cultures
 VF = VF.unique(["Code departement", "Valeur fonciere", "Date mutation", "Section"])
-with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1600) and pl.Config(tbl_rows=100):
-    print(VF.head(2))
 
 # Selection des colonnes pertinentes
 VF = VF[
@@ -172,11 +170,14 @@ CC = CC.rename({"#Code_commune_INSEE": "INSEE_C"})
 
 # On enlève tous les locaux industriels et les dépendances
 VF = VF.filter(pl.col("Code type local") < 3)
-with pl.Config(tbl_cols=-1) and pl.Config(tbl_width_chars=1600) and pl.Config(tbl_rows=100):
-    print(VF.filter(pl.col("Valeur fonciere").is_not_null()).sort("Valeur fonciere"))
 
 # On remplace le code departement et le code commune par le code insee qui nous sert pour les jointures
 VF = VF.with_columns(
+    pl.when(pl.col("Code departement").eq(9))
+    .then(pl.lit("09"))
+    .otherwise(pl.col("Code departement").cast(pl.String))
+    .alias("Code departement")
+).with_columns(
     pl.when(pl.col("Code commune") < 10)
     .then(pl.col("Code departement").cast(pl.String) + pl.lit("00") + pl.col("Code commune").cast(pl.String))
     .when(pl.col("Code commune") < 100)
@@ -232,7 +233,7 @@ VFMOY = pl.concat([VFMOY, VFMOYAPP])
 
 # On concatène la VL et la VF et on concalcule le rendement locatif
 RL = (VL.join(VFMOY, on=["INSEE_C", "Type_de_bien"])
-      .with_columns((pl.col("loypredm2") / pl.col("valeur_fonciere_m2") * pl.lit(12 * 100)).alias("rendement_locatif")))
+      .with_columns((pl.col("loypredm2") / pl.col("valeur_fonciere_m2") * pl.lit(12)).alias("rendement_locatif")))
 
 # On sélectionne les données les plus récentes de la délinquance
 DELINQUANCE = DELINQUANCE.sort("annee").group_by("CODGEO_2024", "classe").last()
@@ -249,7 +250,7 @@ DELINQUANCE_PIVOT = DELINQUANCE.pivot("classe", index=["CODGEO_2024", "POP", "LO
 
 # On pivote les types de bien pour tenir sur une seule ligne et on calcule la moyenne pondérée de tous les types de bien
 RL = RL.pivot(
-    "Type_de_bien", index=["INSEE_C", "EPCI", "DEP"],
+    "Type_de_bien", index=["INSEE_C", "EPCI", "DEP", "LIBGEO"],
     values=["Valeur fonciere", "valeur_fonciere_m2", "pondération_type_de_bien", "rendement_locatif"]
 ).with_columns(
     pl.col("pondération_type_de_bien_maison").fill_null(0),
@@ -269,7 +270,14 @@ RL = RL.pivot(
      (pl.col("pondération_type_de_bien_maison") +
       pl.col("pondération_type_de_bien_app12") +
       pl.col("pondération_type_de_bien_app3p"))
-     ).alias("valeur_fonciere_m2_moyenne")
+     ).alias("valeur_fonciere_m2_moyenne"),
+    ((pl.col("rendement_locatif_maison").fill_null(0) * pl.col("pondération_type_de_bien_maison") +
+      pl.col("rendement_locatif_app12").fill_null(0) * pl.col("pondération_type_de_bien_app12") +
+      pl.col("rendement_locatif_app3p").fill_null(0) * pl.col("pondération_type_de_bien_app3p")) /
+     (pl.col("pondération_type_de_bien_maison") +
+      pl.col("pondération_type_de_bien_app12") +
+      pl.col("pondération_type_de_bien_app3p"))
+     ).alias("rendement_locatif_moyenne")
 )
 
 # On rajoute les noms des epcis et dep en supprimant les doublons dans la table referentiel
