@@ -21,7 +21,7 @@ fichier2 = input_path + "carte_loyers_maison.csv"
 fichier3 = input_path + "carte_loyers_appart_12.csv"
 fichier4 = input_path + "carte_loyers_appart_3plus.csv"
 fichier5 = input_path + "carte_loyers_appart.csv"
-fichier6 = input_path + "codes_communes.csv"
+fichier6 = input_path + "codes_communes.parquet"
 fichier7 = input_path + "statistiques_delinquance.parquet"
 fichier8 = input_path + "epci_occitanie.parquet"
 fichier9 = input_path + "valeursfoncieres-2022.csv"
@@ -31,12 +31,13 @@ url2 = "http://www.data.gouv.fr/fr/datasets/r/34434cef-2f85-43b9-a601-c625ee426c
 url3 = "http://www.data.gouv.fr/fr/datasets/r/edadefbc-9707-45ef-a841-283608709e58"
 url4 = "http://www.data.gouv.fr/fr/datasets/r/08871624-ccb5-457a-83d5-fb134cba60da"
 url5 = "http://www.data.gouv.fr/fr/datasets/r/43618998-3b37-4a69-bb25-f321f1a93ed1"
-url6 = "http://www.data.gouv.fr/fr/datasets/r/13d16a2f-4cbb-43d1-9057-535ad83354b8"
+url6 = ("https://data.laregion.fr/api/explore/v2.1/catalog/datasets/departements-d-occitanie/exports/parquet?lang=fr"
+        "&timezone=Europe%2FBerlin")
 url7 = "http://www.data.gouv.fr/fr/datasets/r/2902fa66-cafd-47f5-9a15-196853a3ba42"
-url8 = ("https://data.laregion.fr/api/explore/v2.1/catalog/datasets/intercommunalite-occitanie-milesimees/exports"
+url8 = ("http://data.laregion.fr/api/explore/v2.1/catalog/datasets/intercommunalite-occitanie-milesimees/exports"
         "/parquet?lang=fr&timezone=Europe%2FBerlin")
-url9 = "https://www.data.gouv.fr/fr/datasets/r/87038926-fb31-4959-b2ae-7a24321c599a"
-url10 = "https://www.data.gouv.fr/fr/datasets/r/817204ac-2202-4b4a-98e7-4184d154d98c"
+url9 = "http://www.data.gouv.fr/fr/datasets/r/87038926-fb31-4959-b2ae-7a24321c599a"
+url10 = "http://www.data.gouv.fr/fr/datasets/r/817204ac-2202-4b4a-98e7-4184d154d98c"
 
 
 def dowload_data(url, file):
@@ -82,7 +83,7 @@ VLM = pl.read_csv(fichier2, separator=";", encoding="latin", infer_schema_length
 VLAPP12 = pl.read_csv(fichier3, separator=";", encoding="latin", infer_schema_length=100000, decimal_comma=True)
 VLAPP3PLUS = pl.read_csv(fichier4, separator=";", encoding="latin", infer_schema_length=100000, decimal_comma=True)
 VLAPP = pl.read_csv(fichier5, separator=";", encoding="latin", infer_schema_length=100000, decimal_comma=True)
-CC = pl.read_csv(fichier6, separator=";", encoding="latin", infer_schema_length=100000, decimal_comma=True)
+CD = pl.read_parquet(fichier6)
 DELINQUANCE = pl.read_parquet(fichier7)
 EPCI = pl.read_parquet(fichier8)
 
@@ -92,7 +93,6 @@ VLM = VLM.filter(pl.col("DEP").is_in(departements_occitanie))
 VLAPP12 = VLAPP12.filter(pl.col("DEP").is_in(departements_occitanie))
 VLAPP3PLUS = VLAPP3PLUS.filter(pl.col("DEP").is_in(departements_occitanie))
 VLAPP = VLAPP.filter(pl.col("DEP").is_in(departements_occitanie))
-CC = CC.filter(pl.col("#Code_commune_INSEE").str.contains(regex_codes_occitanie))
 DELINQUANCE = DELINQUANCE.filter(pl.col("CODGEO_2024").str.contains(regex_codes_occitanie))
 
 # On sauvegarde les données d'occitanie
@@ -123,7 +123,6 @@ try:
         save_data(output3, VLAPP12)
         save_data(output4, VLAPP3PLUS)
         save_data(output5, VLAPP)
-        save_data(output6, CC)
         save_data(output7, DELINQUANCE)
     else:
         print("Données non sauvegardées")
@@ -154,19 +153,17 @@ EPCI = EPCI[
     [
         "epci_code",
         "epci_current_code",
-        "dep_name",
         "epci_name",
         "year",
     ]
 ]
 
+CD = CD[["nom_officiel_departement", "code_officiel_departement"]]
 VLAPP = VLAPP.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
 VLM = VLM.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
 VLAPP12 = VLAPP12.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
 VLAPP3PLUS = VLAPP3PLUS.drop("TYPPRED", "nbobs_com", "nbobs_mail", "id_zone", "REG")
 
-# On renomme la colonne pour plus de clareté
-CC = CC.rename({"#Code_commune_INSEE": "INSEE_C"})
 
 # On enlève tous les locaux industriels et les dépendances
 VF = VF.filter(pl.col("Code type local") < 3)
@@ -284,6 +281,9 @@ RL = RL.pivot(
 # On rajoute les noms des epcis et dep en supprimant les doublons dans la table referentiel
 EPCI = EPCI.sort("year").group_by(["epci_current_code"]).last().drop("epci_current_code", "year")
 RL = RL.join(EPCI, left_on="EPCI", right_on="epci_code", how="left")
+RL = RL.join(
+    CD, left_on="DEP", right_on="code_officiel_departement"
+)
 
 # On joint les données de la délinquance dans les données de rendement locatif
 RL = RL.join(DELINQUANCE_PIVOT, left_on="INSEE_C", right_on="CODGEO_2024", how="left")
