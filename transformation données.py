@@ -231,9 +231,10 @@ VFMOYAPP = VF.filter(pl.col("Type_de_bien").str.contains("app")).group_by(
 
 VFMOY = pl.concat([VFMOY, VFMOYAPP])
 
-# On concatène la VL et la VF et on concalcule le rendement locatif
+# On concatène la VL et la VF et on concalcule le rendement locatif et on enlève les valeurs aberrantes
 RL = (VL.join(VFMOY, on=["INSEE_C", "Type_de_bien"])
-      .with_columns((pl.col("loypredm2") / pl.col("valeur_fonciere_m2") * pl.lit(12)).alias("rendement_locatif")))
+      .with_columns((pl.col("loypredm2") / pl.col("valeur_fonciere_m2") * pl.lit(12)).alias("rendement_locatif"))
+      ).filter(pl.col("rendement_locatif") < 0.5)
 
 # On sélectionne les données les plus récentes de la délinquance
 DELINQUANCE = DELINQUANCE.sort("annee").group_by("CODGEO_2024", "classe").last()
